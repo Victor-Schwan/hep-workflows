@@ -71,6 +71,8 @@ In this working directory, `SINDARIN_FILE` is copied to `process.sin`. In this f
 
 `outputBasename()` defaults to `E{COM_ENERGY}_TDR.P{PROCESS_NAME}.Gwhizard-{WHIZARD_VERSION}.{POLARIZATION_KEY}.{OUTPUT_INDEX}`. A `WhizardOption` can set another format string as `output_name`; it may use the same fields and all keys of its `kwargs`, e.g. `E{COM_ENERGY}-{BEAM_LABEL}.P{PROCESS_NAME}...` with `kwargs = {'BEAM_LABEL': 'SetA'}`. The names of all runs of a configuration must differ, and should keep `.Gwhizard-{WHIZARD_VERSION}.`, by which `WhizardTaskReport` finds the working directories.
 
+By default, each `WhizardOption` is run for the four polarizations `eL.pL`, `eL.pR`, `eR.pL` and `eR.pR`, whose beam densities replace `$BEAMPOL1` and `$BEAMPOL2` (e.g. `beams_pol_density = @($BEAMPOL1), @($BEAMPOL2)`). A `WhizardOption` can define its own as `polarizations`, a dict of label (`POLARIZATION_KEY`) to the two densities, where an empty density gives an unpolarized beam. E.g. for a photon radiated by the electron beam (labelled `W` as in the ILD production): `{'eW.pL': ('', '-1'), 'eW.pR': ('', '1')}`. The keys of `iters_per_polarization` must be among the polarizations of the option.
+
 ### FastSimSGV
 
 This workflow runs [SGV](https://gitlab.desy.de/mikael.berggren/sgv) fast simulation on the provided input files and a given steering file. For this to work, the `SGV_DIR` environment variable must exist.
