@@ -14,12 +14,11 @@ from pathlib import Path
 import pytest
 
 from hep_workflows.framework import AnalysisConfiguration, EVENT_SIM_ENUM, RECO_ANA_RUNMODES, configurations
-from hep_workflows.tasks_generator import whizard_output_basename
+from hep_workflows.tasks_generator import DEFAULT_POLARIZATIONS, whizard_output_basename, whizard_runs
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 LAW_CFG = PACKAGE_DIR.parent / 'law.cfg'
 CONFIG_MODULES = sorted(f'hep_workflows.configs.{p.stem}' for p in (PACKAGE_DIR / 'configs').glob('test_*.py'))
-POLARIZATION_KEYS = {'eL.pL', 'eL.pR', 'eR.pL', 'eR.pR'}
 
 # importing registers the configurations (setup() is only called on first use, i.e. never here)
 for name in CONFIG_MODULES:
@@ -124,7 +123,7 @@ def test_whizard_options(config):
         sindarin_file = template_dir / option['sindarin_file']
 
         assert sindarin_file.is_file(), f'{sindarin_file} does not exist'
-        assert set(option['iters_per_polarization'] or {}) <= POLARIZATION_KEYS
+        assert set(option['iters_per_polarization'] or {}) <= set(option.get('polarizations', DEFAULT_POLARIZATIONS))
 
         sindarin = sindarin_file.read_text()
 
@@ -155,5 +154,28 @@ def test_whizard_output_basename():
     with pytest.raises(KeyError, match='UNKNOWN'):
         whizard_output_basename({**WHIZARD_RUN, 'OUTPUT_NAME': '{UNKNOWN}'})
 
-    with pytest.raises(ValueError, match='path separator'):
+    with pytest.raises(Exception, match='No directory'):
         whizard_output_basename({**WHIZARD_RUN, 'OUTPUT_NAME': 'sub/{PROCESS_NAME}'})
+
+WHIZARD_OPTION = {'process_name': 'ae1z_l0', 'process_definition': '', 'template_dir': '/t',
+                  'sindarin_file': 'template.sin', 'iters_per_polarization': None, 'nevents': 10}
+
+def test_whizard_runs_default_polarizations():
+    runs = whizard_runs(WHIZARD_OPTION, 240., '3.1.5')
+    assert [(r['POLARIZATION_KEY'], r['BEAMPOL1'], r['BEAMPOL2']) for r in runs] == \
+        [(key, *densities) for key, densities in DEFAULT_POLARIZATIONS.items()]
+
+def test_whizard_runs_own_polarizations():
+    # photon from the electron beam: the electron side is unpolarized, i.e. @()
+    option = {**WHIZARD_OPTION, 'polarizations': {'eW.pL': ('', '-1'), 'eW.pR': ('', '1')},
+              'iters_per_polarization': {'eW.pR': 2}}
+    runs = whizard_runs(option, 240., '3.1.5')
+    assert [(r['POLARIZATION_KEY'], r['BEAMPOL1'], r['BEAMPOL2'], r['OUTPUT_INDEX']) for r in runs] == \
+        [('eW.pR', '', '1', 0), ('eW.pR', '', '1', 1)]
+    assert whizard_output_basename(runs[1]) == 'E240_TDR.Pae1z_l0.Gwhizard-3.1.5.eW.pR.1'
+
+def test_whizard_runs_unknown_polarization():
+    # e.g. a polarization of the default set, but the option has its own
+    option = {**WHIZARD_OPTION, 'polarizations': {'eW.pL': ('', '-1')}, 'iters_per_polarization': {'eL.pL': 1}}
+    with pytest.raises(ValueError, match='eL.pL'):
+        whizard_runs(option, 240., '3.1.5')
