@@ -1,11 +1,62 @@
 from typing import cast
 from .utils import ShellTask, BaseTask
 from .framework import BaseWorkflowTask, configurations
+from .utils.types import WhizardOption
 import os, shutil
 import os.path as osp
 import subprocess, law
 
 DEFAULT_OUTPUT_NAME = 'E{COM_ENERGY}_TDR.P{PROCESS_NAME}.Gwhizard-{WHIZARD_VERSION}.{POLARIZATION_KEY}.{OUTPUT_INDEX}'
+
+DEFAULT_POLARIZATIONS:dict[str, tuple[str, str]] = {
+    'eL.pL': ('-1', '-1'),
+    'eL.pR': ('-1',  '1'),
+    'eR.pL': ( '1', '-1'),
+    'eR.pR': ( '1',  '1'),
+}
+"""The polarizations of a WhizardOption without own `polarizations`: label -> densities of the
+electron and positron beam, inserted as $BEAMPOL1 and $BEAMPOL2."""
+
+def whizard_runs(whizard_option: WhizardOption, sqrt_s: float, whizard_version: str) -> list[dict]:
+    """The properties of all Whizard runs of one WhizardOption: one per polarization and iteration.
+    Each property <PROP> replaces $<PROP> in the sindarin file."""
+    polarizations = whizard_option.get('polarizations', DEFAULT_POLARIZATIONS)
+    iters_per_polarization = whizard_option.get('iters_per_polarization')
+
+    unknown = set(iters_per_polarization or {}) - set(polarizations)
+    if unknown:
+        raise ValueError(f'iters_per_polarization of process <{whizard_option["process_name"]}> has the '
+                         f'polarizations {sorted(unknown)}, which are not in {sorted(polarizations)}')
+
+    runs = []
+    for pol_key, (beamPol1, beamPol2) in polarizations.items():
+        niters = 1 if iters_per_polarization is None else iters_per_polarization.get(pol_key, 0)
+
+        for niter in range(niters):
+            properties = {
+                'COM_ENERGY': sqrt_s,
+                'WHIZARD_VERSION': whizard_version,
+                'POLARIZATION_KEY': pol_key,
+                'BEAMPOL1': beamPol1,
+                'BEAMPOL2': beamPol2,
+                'PROCESS_NAME': whizard_option['process_name'],
+                'PROCESS_DEFINITION': whizard_option.get('process_definition', ''),
+                'TEMPLATE_DIR': whizard_option['template_dir'],
+                'SINDARIN_FILE': whizard_option['sindarin_file'],
+                'OUTPUT_INDEX': niter,
+                'NEVENTS': whizard_option.get('nevents', 100000)
+            }
+
+            for key, value in whizard_option.get('kwargs', {}).items():
+                properties[key] = value if isinstance(value, str) else str(value)
+
+            # not a placeholder of the sindarin file: $OUTPUT_NAME is replaced by the basename
+            if 'output_name' in whizard_option:
+                properties['OUTPUT_NAME'] = whizard_option['output_name']
+
+            runs.append(properties)
+
+    return runs
 
 def whizard_output_basename(properties: dict) -> str:
     """Basename of the sindarin file, working directory and .slcio file of one Whizard run: the
@@ -45,42 +96,9 @@ class WhizardSteeringFileConstructor(BaseTask):
         branch = 0
 
         for whizard_option in whizard_options:
-            iters_per_polarization = whizard_option['iters_per_polarization'] if 'iters_per_polarization' in whizard_option else None
-
-            for beamPol1, beamPol2, pol_key in [
-                ('-1', '-1', 'eL.pL'),
-                ('-1',  '1', 'eL.pR'),
-                ( '1', '-1', 'eR.pL'),
-                ( '1',  '1', 'eR.pR')
-            ]:
-                niters = 1 if iters_per_polarization is None else (0 if not pol_key in iters_per_polarization else iters_per_polarization[pol_key])
-                if niters == 0:
-                    continue
-
-                for niter in range(niters):
-                    properties = {
-                        'COM_ENERGY': config.sqrt_s,
-                        'WHIZARD_VERSION': whiz_ver,
-                        'POLARIZATION_KEY': pol_key,
-                        'BEAMPOL1': beamPol1,
-                        'BEAMPOL2': beamPol2,
-                        'PROCESS_NAME': whizard_option['process_name'],
-                        'PROCESS_DEFINITION': whizard_option.get('process_definition', ''),
-                        'TEMPLATE_DIR': whizard_option['template_dir'],
-                        'SINDARIN_FILE': whizard_option['sindarin_file'],
-                        'OUTPUT_INDEX': niter,
-                        'NEVENTS': whizard_option.get('nevents', 100000)
-                    }
-
-                    for key, value in whizard_option.get('kwargs', {}).items():
-                        properties[key] = value if isinstance(value, str) else str(value)
-
-                    # not a placeholder of the sindarin file: $OUTPUT_NAME is replaced by the basename
-                    if 'output_name' in whizard_option:
-                        properties['OUTPUT_NAME'] = whizard_option['output_name']
-
-                    branch_map[branch] = properties
-                    branch += 1
+            for properties in whizard_runs(whizard_option, config.sqrt_s, whiz_ver):
+                branch_map[branch] = properties
+                branch += 1
 
         return branch_map
 

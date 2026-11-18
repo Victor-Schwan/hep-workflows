@@ -14,6 +14,12 @@ class WhizardOption(TypedDict):
     """Format string of the output basename (sindarin, working directory and .slcio file), filled with
     the properties of the run, i.e. COM_ENERGY, PROCESS_NAME, WHIZARD_VERSION, POLARIZATION_KEY,
     OUTPUT_INDEX and all kwargs. Defaults to tasks_generator.DEFAULT_OUTPUT_NAME."""
+    polarizations: NotRequired[dict[str, tuple[str, str]]]
+    """Polarization label (POLARIZATION_KEY) -> densities of the electron and positron beam, inserted as
+    $BEAMPOL1 and $BEAMPOL2, e.g. in `beams_pol_density = @($BEAMPOL1), @($BEAMPOL2)`. An empty density
+    gives @(), i.e. an unpolarized beam, e.g. {'eW.pL': ('', '-1')} for a photon from the electron beam.
+    Defaults to tasks_generator.DEFAULT_POLARIZATIONS (eL.pL, eL.pR, eR.pL, eR.pR). The keys of
+    iters_per_polarization must be among them."""
 
 RecoAnaBranchValue = tuple[list[str]|str, int, int, int|None, int, str, str|None, str]
 """A branch in a task inheriting from AbstractRecoAna
